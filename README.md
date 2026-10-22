@@ -23,39 +23,7 @@
 | מסד נתונים | PostgreSQL 16 |
 | כלים נוספים | JPA, Lombok, Validation |
 
----
-
-## ארכיטקטורה – מבט על
-
-הלקוח מדבר רק עם Spring MVC. אימות מתבצע בפילטר לפני שהבקשה מגיעה ל-controller; נתוני משתמשים ותפקידים נשמרים ב-PostgreSQL.
-
-</div>
-
-```mermaid
-flowchart LR
-    subgraph client [Client]
-        HTTP[HTTP Client / Postman / IntelliJ]
-    end
-    subgraph app [Spring Boot App]
-        MVC[Controllers]
-        Filter[JwtAuthFilter]
-        Sec[SecurityConfig]
-        Svc[Services]
-        JPA[Spring Data JPA]
-    end
-    subgraph data [Data]
-        PG[(PostgreSQL)]
-    end
-    HTTP --> MVC
-    MVC --> Svc
-    Filter --> Sec
-    Filter --> Svc
-    Svc --> JPA
-    JPA --> PG
-    HTTP -.->|Bearer JWT| Filter
-```
-
-<div dir="rtl">
+הלקוח מדבר עם Spring MVC; `JwtAuthFilter` מאמת טוקן לפני הגעה ל-controller; משתמשים ותפקידים ב-PostgreSQL (יחס many-to-many דרך `user_roles`, סיסמאות כ-BCrypt).
 
 ---
 
@@ -66,26 +34,6 @@ flowchart LR
 | ציבורי | `/api/auth/**`, `/api/public/**` | לא נדרש | — |
 | משתמש | `/api/user/**` | כן | `ROLE_USER` |
 | מנהל | `/api/admin/**` | כן | `ROLE_ADMIN` |
-
-</div>
-
-```mermaid
-flowchart TB
-    subgraph zones [Security zones]
-        Public["/api/public + /api/auth"]
-        UserZone["/api/user/**"]
-        AdminZone["/api/admin/**"]
-    end
-    Public -->|permitAll| OK200[200 OK]
-    UserZone -->|hasRole USER| OK200
-    AdminZone -->|hasRole ADMIN| OK200
-    UserZone -->|wrong role| E403[403 Forbidden]
-    AdminZone -->|wrong role| E403
-    UserZone -->|no valid token| E401[401 Unauthorized]
-    AdminZone -->|no valid token| E401
-```
-
-<div dir="rtl">
 
 ---
 
@@ -111,7 +59,7 @@ flowchart TB
 
 ---
 
-## תרשים רצף: התחברות (Login)
+## תרשים 1: התחברות וקבלת JWT
 
 </div>
 
@@ -140,36 +88,9 @@ sequenceDiagram
 
 ---
 
-## תרשים רצף: בקשה מוגנת
+## תרשים 2: האם הבקשה מאושרת? (401 / 403)
 
-</div>
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant F as JwtAuthFilter
-    participant J as JwtUtil
-    participant DB as PostgreSQL
-    participant SC as SecurityContext
-    participant R as ResourceController
-
-    C->>F: GET /api/user/me + Authorization Bearer
-    F->>J: parse + verify signature
-    J-->>F: claims valid
-    F->>DB: load fresh user + roles
-    DB-->>F: enabled user
-    F->>SC: set Authentication
-    F->>R: continue filter chain
-    R-->>C: 200 UserResponse JSON
-```
-
-<div dir="rtl">
-
----
-
-## עץ החלטות: האם הבקשה מאושרת?
-
-מבוסס על `JwtAuthFilter` + `SecurityConfig` (stateless, בלי session).
+מבוסס על `JwtAuthFilter` + `SecurityConfig` — שרת **stateless**, בלי session.
 
 </div>
 
@@ -194,94 +115,17 @@ flowchart TD
 
 ---
 
-## מבנה טוקן JWT (HS256)
-
-הטוקן **חתום** אבל **לא מוצפן** – כל מי שמחזיק בו יכול לקרוא את ה-payload; לכן לא שמים בו סיסמאות או מידע רגיש.
-
-</div>
-
-```mermaid
-flowchart LR
-    subgraph jwt [JWT string]
-        H[Header.alg typ]
-        P[Payload.sub roles exp]
-        S[Signature HMAC]
-    end
-    H --> P --> S
-```
-
-<div dir="rtl">
-
----
-
-## מודל נתונים
-
-יחס **רבים-לרבים** בין משתמשים לתפקידים (`user_roles`). סיסמה בטבלה `users` – רק hash BCrypt.
-
-</div>
-
-```mermaid
-erDiagram
-    USERS ||--o{ USER_ROLES : has
-    ROLES ||--o{ USER_ROLES : assigned
-    USERS {
-        bigint id PK
-        varchar username UK
-        varchar password "BCrypt"
-        boolean enabled
-    }
-    ROLES {
-        bigint id PK
-        varchar name UK
-    }
-    USER_ROLES {
-        bigint user_id FK
-        bigint role_id FK
-    }
-```
-
-<div dir="rtl">
-
----
-
 ## זרימה בקצרה (טקסט)
 
-1. **Login** – הסיסמה נבדקת מול BCrypt ב-DB; בהצלחה `JwtUtil` מנפיק טוקן חתום (HS256).  
-2. **בקשה עם טוקן** – `JwtAuthFilter` מאמת חתימה ותוקף, טוען את המשתמש **מחדש** מה-DB (כולל תפקידים), וממלא `SecurityContext`.  
-3. **הרשאות** – `SecurityConfig` קובע לפי prefix של URL.
+1. **Login** – הסיסמה נבדקת מול BCrypt; `JwtUtil` מנפיק טוקן חתום (HS256).  
+2. **בקשה מוגנת** – הפילטר מאמת JWT, טוען משתמש **מעודכן** מה-DB, וממלא `SecurityContext`.  
+3. **הרשאות** – `SecurityConfig` לפי prefix של URL. הטוקן נשלח ב-`Authorization: Bearer …`.
 
-השרת **stateless**: אין session; הטוקן נשלח בכותרת `Authorization: Bearer …`.
+בבקשה מוגנת: `JwtAuthFilter` → `JwtUtil` → DB → Controller. תוכן JWT **חתום ולא מוצפן** — לא לשים בו סודות.
 
 ---
 
 ## מבנה הפרויקט (תמצית)
-
-</div>
-
-```mermaid
-flowchart TB
-    subgraph web [Web layer]
-        ULC[UserLoginController]
-        RC[ResourceController]
-    end
-    subgraph domain [Domain]
-        ULS[UserLoginService]
-        US[UserService]
-    end
-    subgraph infra [Infrastructure]
-        SEC[security package]
-        CFG[config package]
-        REPO[repositories]
-    end
-    ULC --> ULS
-    RC --> US
-    ULS --> REPO
-    US --> REPO
-    SEC --> REPO
-    CFG --> SEC
-```
-
-<div dir="rtl">
 
 ```
 src/main/java/com/example/jwtlesson/
@@ -295,8 +139,7 @@ src/main/java/com/example/jwtlesson/
   exception/    טיפול ב-401/409/400 כ-JSON
 ```
 
-בתיקיית `http/` – בדיקות IntelliJ HTTP Client (19 תרחישים).  
-בתיקיית `scripts/` – `security-tests.ps1` לאותן בדיקות מול שרת חי.
+`http/` – בדיקות IntelliJ (19 תרחישים) · `scripts/security-tests.ps1` – אותן בדיקות מול שרת חי.
 
 ---
 
@@ -308,11 +151,11 @@ src/main/java/com/example/jwtlesson/
 docker compose up -d
 ```
 
-חיבור: `localhost:5432`, DB `jwt_lesson`, משתמש/סיסמה `postgres` (ניתן לדרוס עם `DB_USER` / `DB_PASSWORD`).
+חיבור: `localhost:5432`, DB `jwt_lesson`, משתמש/סיסמה `postgres`.
 
 ### 2. האפליקציה
 
-IntelliJ: `JwtLessonApplication` · או `mvn spring-boot:run` · פורט **8080**.
+`JwtLessonApplication` ב-IntelliJ · או `mvn spring-boot:run` · פורט **8080**.
 
 ### 3. משתמשים לדוגמה
 
@@ -325,9 +168,9 @@ IntelliJ: `JwtLessonApplication` · או `mvn spring-boot:run` · פורט **808
 
 | אופן | פקודה / מיקום |
 |------|----------------|
-| IntelliJ | `http/security-tests.http`, סביבה `dev`, Run All |
+| IntelliJ | `http/security-tests.http`, סביבה `dev` |
 | PowerShell | `.\scripts\security-tests.ps1` |
-| Maven | `mvn test` (H2 בזיכרון, 19 תרחישים) |
+| Maven | `mvn test` (H2, 19 תרחישים) |
 
 ---
 
@@ -340,12 +183,12 @@ IntelliJ: `JwtLessonApplication` · או `mvn spring-boot:run` · פורט **808
 | Enumeration | אותה הודעת 401 ל-login שגוי |
 | Session | Stateless + JWT בכותרת |
 | תפקידים מעודכנים | טעינת user מה-DB בכל בקשה בפילטר |
-| 401 מול 403 | `authenticationEntryPoint` + `accessDeniedHandler` מפורשים |
+| 401 מול 403 | `authenticationEntryPoint` + `accessDeniedHandler` |
 
 ---
 
 ## מקור והשראה
 
-הפרויקט מבוסס על תרגיל Spring Security + JWT (מבנה דומה לשיעור jwt-lesson), עם הרחבות: `docker-compose`, בדיקות Maven, סקריפט PowerShell ותיעוד עם תרשימים להגשה.
+מבוסס על תרגיל Spring Security + JWT (מבנה דומה לשיעור jwt-lesson), עם הרחבות להרצה, בדיקות ותיעוד להגשה.
 
 </div>
