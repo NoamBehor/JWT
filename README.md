@@ -2,15 +2,6 @@
 
 # JWT – פרויקט הגשה
 
-מימוש של REST API מאובטח: התחברות עם שם משתמש וסיסמה, קבלת **JWT**, וגישה לנתיבים שונים לפי **תפקיד** (משתמש רגיל / מנהל).
-
-[![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk)](https://openjdk.org/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.1-6DB33F?logo=springboot)](https://spring.io/projects/spring-boot)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql)](https://www.postgresql.org/)
-[![JWT](https://img.shields.io/badge/JWT-jjwt%200.13.0-black)](https://github.com/jwtk/jjwt)
-
-**מאגר:** [github.com/NoamBehor/JWT](https://github.com/NoamBehor/JWT)
-
 ---
 
 ## סטאק
