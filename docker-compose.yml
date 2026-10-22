@@ -1,0 +1,9 @@
+services:
+  db:
+    image: postgres:16
+    container_name: pg-lesson
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: jwt_lesson
+    ports:
+      - "5432:5432"
